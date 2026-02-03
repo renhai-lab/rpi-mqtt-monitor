@@ -756,7 +756,9 @@ def handle_specific_configurations(data, what_config, device):
         )
     elif what_config == "status":
         add_common_attributes(data, "mdi:lan-connect", get_translation("status"))
-        data["value_template"] = "{{ 'online' if value == '1' else 'offline' }}"
+        data["device_class"] = "connectivity"
+        data["payload_on"] = "on"
+        data["payload_off"] = "off"
     elif what_config == "git_update":
         add_common_attributes(
             data,
@@ -1357,7 +1359,7 @@ def publish_to_mqtt(monitored_values):
 
     status_sensor_topic = (
         config.mqtt_discovery_prefix
-        + "/sensor/"
+        + "/binary_sensor/"
         + config.mqtt_topic_prefix
         + "/"
         + hostname
@@ -1370,7 +1372,7 @@ def publish_to_mqtt(monitored_values):
         + "/"
         + hostname
         + "/status",
-        "1",
+        "on",
         qos=config.qos,
         retain=config.retain,
     )
@@ -1813,7 +1815,7 @@ if __name__ == "__main__":
                 + "/"
                 + hostname
                 + "/status",
-                "0",
+                "off",
                 qos=config.qos,
                 retain=config.retain,
             )
