@@ -100,12 +100,22 @@ rpi_power_status = False
 # Check for apt updates - experimental feature, disabled by default, updated with update_check_interval
 apt_updates = False
 
+# Disk monitoring - monitor mount status, total size, free space and usage percentage for specified mount points
+disk_monitoring = True
+# Format: [("short_name", "/mount/path"), ...]
+disk_mounts = [
+    ("backup_1t", "/mnt/backup_1t_raw"),
+    ("es_storage", "/home/hncdjzw/ES"),
+    ("backup_2t", "/mnt/backup_2t_raw"),
+    ("main_storage", "/mnt/storage")
+]
+
 # Change the thermal zone if you have issues with cpu temps
 cpu_thermal_zone = 'cpu'
 
 # read external sensors for temperature, humidity, pressure etc.
 ext_sensors = False
-#ext_sensors = [["Housing", "ds18b20", "0014531448ff", -300], ["ext2", "sht21", 0, [-300, 0]]] 
+#ext_sensors = [["Housing", "ds18b20", "0014531448ff", -300], ["ext2", "sht21", 0, [-300, 0]]]
 
 # use availability, i.e. switch sensors to "unavailable" if there are issues reading them
 use_availability = False
@@ -119,8 +129,8 @@ output_mode = "w"
 def get_content_outputfile():
     # In this example the values from the ext_sensors are used
     # the values for the temperature values are rounded to 1 decimal
-    sht21_temp = round(float(ext_sensors[1][3][0]), 1) 
-    sht21_hum = ext_sensors[1][3][1] 
-    ds18b20_temp = round(float(ext_sensors[0][3]), 1) 
+    sht21_temp = round(float(ext_sensors[1][3][0]), 1)
+    sht21_hum = ext_sensors[1][3][1]
+    ds18b20_temp = round(float(ext_sensors[0][3]), 1)
     return f"T: {sht21_temp} 'C; H: {sht21_hum} %% ; T-Rpi: {ds18b20_temp} 'C"
 
