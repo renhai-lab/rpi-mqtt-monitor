@@ -43,6 +43,10 @@ configlanguage.read(
 )
 
 
+DISK_HEALTH_INTERVAL = 600  # seconds
+_disk_health_cache = {}
+
+
 def get_translation(key):
     """get the correct translation"""
     return configlanguage.get(config.language, key, fallback=key)
@@ -520,6 +524,136 @@ def check_disk_usage(mount_path):
         return {"total_gb": None, "free_gb": None, "used_percent": None}
 
 
+def get_mount_device(mount_path):
+    try:
+        partitions = psutil.disk_partitions(all=True)
+        for partition in partitions:
+            if partition.mountpoint == mount_path:
+                return partition.device
+    except Exception as e:
+        print(f"Error resolving device for mount {mount_path}: {e}")
+    return None
+
+
+def get_fstab_device_spec(mount_path):
+    try:
+        with open("/etc/fstab", "r") as fstab:
+            for line in fstab:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == mount_path:
+                    return parts[0]
+    except Exception as e:
+        print(f"Error reading /etc/fstab for {mount_path}: {e}")
+    return None
+
+
+def resolve_device_path(device_spec):
+    if not device_spec:
+        return None
+    if device_spec.startswith("UUID="):
+        return os.path.join("/dev/disk/by-uuid", device_spec.replace("UUID=", ""))
+    if device_spec.startswith("LABEL="):
+        return os.path.join("/dev/disk/by-label", device_spec.replace("LABEL=", ""))
+    if device_spec.startswith("/dev/"):
+        return device_spec
+    return None
+
+
+def get_device_path_for_mount(mount_path):
+    device = get_mount_device(mount_path)
+    if device:
+        return device
+    device_spec = get_fstab_device_spec(mount_path)
+    return resolve_device_path(device_spec)
+
+
+def get_parent_block_device(device_path):
+    if not device_path:
+        return None
+    if re.search(r"p\d+$", device_path):
+        return re.sub(r"p\d+$", "", device_path)
+    return re.sub(r"\d+$", "", device_path)
+
+
+def check_smart_health(device_path):
+    if not device_path:
+        return None
+    parent_device = get_parent_block_device(device_path)
+    if not parent_device:
+        return None
+    try:
+        result = subprocess.run(
+            ["smartctl", "-H", parent_device],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+        if "PASSED" in output:
+            return True
+        if "FAILED" in output:
+            return False
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        print(f"Error checking SMART health for {device_path}: {e}")
+    return None
+
+
+def check_usb_stability(device_path):
+    if not device_path:
+        return None
+    parent_device = os.path.basename(get_parent_block_device(device_path) or "")
+    if not parent_device:
+        return None
+    try:
+        result = subprocess.run(
+            ["dmesg", "-T"], capture_output=True, text=True, timeout=5
+        )
+        lines = result.stdout.split("\n")[-200:]
+        keywords = ["error", "failed", "reset", "disconnect"]
+        recent_errors = [
+            line
+            for line in lines
+            if parent_device in line and any(k in line.lower() for k in keywords)
+        ]
+        return len(recent_errors) < 5
+    except Exception as e:
+        print(f"Error checking USB stability for {device_path}: {e}")
+        return None
+
+
+def get_disk_overall_health(disk_name, mount_path, is_mounted):
+    if not is_mounted:
+        return False
+
+    now = time.time()
+    cached = _disk_health_cache.get(disk_name)
+    if cached and (now - cached["timestamp"]) < DISK_HEALTH_INTERVAL:
+        return cached["value"]
+
+    device_path = get_device_path_for_mount(mount_path)
+    exists = os.path.exists(device_path) if device_path else None
+    smart_healthy = check_smart_health(device_path)
+    usb_ok = check_usb_stability(device_path)
+
+    overall_healthy = (
+        is_mounted
+        and exists is not False
+        and smart_healthy is not False
+        and usb_ok is not False
+    )
+
+    _disk_health_cache[disk_name] = {
+        "timestamp": now,
+        "value": overall_healthy,
+    }
+    return overall_healthy
+
+
 def print_measured_values(monitored_values):
     remote_version = update.check_git_version_remote(script_dir)
     output = """:: rpi-mqtt-monitor :: v {}
@@ -923,6 +1057,16 @@ def handle_specific_configurations(data, what_config, device):
         data["device_class"] = "connectivity"
         data["payload_on"] = "True"
         data["payload_off"] = "False"
+    elif what_config.startswith("disk_") and "_overall_health" in what_config:
+        disk_name = what_config.replace("disk_", "").replace("_overall_health", "")
+        add_common_attributes(
+            data,
+            "mdi:check-circle",
+            f"{disk_name.replace('_', ' ').title()} Overall Health",
+        )
+        data["device_class"] = "problem"
+        data["payload_on"] = "False"
+        data["payload_off"] = "True"
     elif what_config.startswith("disk_") and "_total" in what_config:
         disk_name = what_config.replace("disk_", "").replace("_total", "")
         add_common_attributes(
@@ -1427,7 +1571,7 @@ def publish_to_mqtt(monitored_values):
             if key.startswith("disk_"):
                 value = monitored_values[key]
                 # Determine sensor type for discovery message
-                if "_mounted" in key:
+                if "_mounted" in key or "_overall_health" in key:
                     sensor_type = "binary_sensor"
                 else:
                     sensor_type = "sensor"
@@ -1648,6 +1792,9 @@ def collect_monitored_values():
             # Check mount status
             is_mounted = check_disk_status(mount_path)
             monitored_values[f"disk_{disk_name}_mounted"] = is_mounted
+
+            overall_health = get_disk_overall_health(disk_name, mount_path, is_mounted)
+            monitored_values[f"disk_{disk_name}_overall_health"] = overall_health
 
             # Get disk usage
             usage = check_disk_usage(mount_path)
