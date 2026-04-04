@@ -636,9 +636,10 @@ def get_disk_overall_health(disk_name, mount_path, is_mounted):
         return cached["value"]
 
     device_path = get_device_path_for_mount(mount_path)
-    exists = os.path.exists(device_path) if device_path else None
-    smart_healthy = check_smart_health(device_path)
-    usb_ok = check_usb_stability(device_path)
+    device_is_block = device_path and device_path.startswith("/dev/")
+    exists = os.path.exists(device_path) if device_is_block else None
+    smart_healthy = check_smart_health(device_path) if device_is_block else None
+    usb_ok = check_usb_stability(device_path) if device_is_block else None
 
     overall_healthy = (
         is_mounted
