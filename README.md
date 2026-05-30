@@ -1,5 +1,7 @@
 # Raspberry Pi MQTT Monitor
 
+> 本仓库为 [hjelev/rpi-mqtt-monitor](https://github.com/hjelev/rpi-mqtt-monitor) 的 fork，保留原始功能并可能包含自定义修改。
+
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/hjelev/rpi-mqtt-monitor)](https://github.com/hjelev/rpi-mqtt-monitor/releases)
 [![GitHub repo size](https://img.shields.io/github/repo-size/hjelev/rpi-mqtt-monitor)](https://github.com/hjelev/rpi-mqtt-monitor)
 [![GitHub issues](https://img.shields.io/github/issues/hjelev/rpi-mqtt-monitor)](https://github.com/hjelev/rpi-mqtt-monitor/issues)
